@@ -1,64 +1,68 @@
 blueprint:
   name: Motion-activated Light with Adaptive Brightness
-  description: Encén la llum amb diferents nivells de brillantor i temperatura de color segons l’hora i redueix la brillantor abans d’apagar-se.
+  description: Encén la llum amb diferents nivells de brillantor i temperatura de
+    color segons l'hora i redueix la brillantor abans d'apagar-se.
   domain: automation
   input:
     motion_sensor:
       name: Sensors de moviment
       selector:
         entity:
-          domain: binary_sensor
-          device_class: motion
+          domain:
+          - binary_sensor
+          device_class:
+          - motion
           multiple: true
     light_target:
       name: Llums a encendre
       selector:
         entity:
-          domain: light
+          domain:
+          - light
           multiple: true
     no_motion_wait:
       name: Temps abans de baixar brillantor i apagar
-      description: Temps d’espera sense moviment abans de reduir la brillantor i apagar la llum.
+      description: Temps d'espera sense moviment abans de reduir la brillantor i apagar
+        la llum.
       default: 120
       selector:
         number:
-          min: 5
-          max: 3600
+          min: 5.0
+          max: 3600.0
           unit_of_measurement: seconds
-
+          step: 1.0
+          mode: slider
+  source_url: https://raw.githubusercontent.com/jordipc9/Home-Assistant/refs/heads/main/motion_light_adaptive.yaml
 trigger:
+- platform: state
+  entity_id: !input motion_sensor
+  to: 'on'
+action:
+- service: light.turn_on
+  target:
+    entity_id: !input light_target
+  data:
+    brightness_pct: '{{ 30 if now().hour >= 22 or now().hour < 6 else 100 if now().hour
+      >= 6 and now().hour < 18 else 60 }}'
+    color_temp_kelvin: '{{ 2200 if now().hour >= 22 or now().hour < 6 else 4000 if
+      now().hour >= 6 and now().hour < 18 else 2850 }}'
+    transition: 3
+- wait_for_trigger:
   - platform: state
     entity_id: !input motion_sensor
-    to: "on"
-
-action:
-  - service: light.turn_on
-    target:
-      entity_id: !input light_target
-    data:
-      brightness_pct: "{{ 30 if now().hour >= 22 or now().hour < 6 else 100 if now().hour >= 6 and now().hour < 18 else 60 }}"
-      color_temp: "{{ 450 if now().hour >= 22 or now().hour < 6 else 250 if now().hour >= 6 and now().hour < 18 else 350 }}"
-      transition: 3  # Fade-in de 3 segons
-
-  - wait_for_trigger:
-      - platform: state
-        entity_id: !input motion_sensor
-        to: "off"
-  - delay: !input no_motion_wait  # Espera abans de baixar la brillantor
-
-  - service: light.turn_on
-    target:
-      entity_id: !input light_target
-    data:
-      brightness_pct: "{{ 15 if now().hour >= 22 or now().hour < 6 else 50 if now().hour >= 6 and now().hour < 18 else 30 }}"
-      transition: 2  # Reducció de brillantor suau
-
-  - delay: "{{ 15 if now().hour >= 0 and now().hour < 6 else 60 }}"  # 15s de matinada, 1 min la resta
-
-  - service: light.turn_off
-    target:
-      entity_id: !input light_target
-    data:
-      transition: 3  # Fade-out de 3 segons
-
+    to: 'off'
+- delay: !input no_motion_wait
+- service: light.turn_on
+  target:
+    entity_id: !input light_target
+  data:
+    brightness_pct: '{{ 15 if now().hour >= 22 or now().hour < 6 else 50 if now().hour
+      >= 6 and now().hour < 18 else 30 }}'
+    transition: 2
+- delay: '{{ 15 if now().hour >= 0 and now().hour < 6 else 60 }}'
+- service: light.turn_off
+  target:
+    entity_id: !input light_target
+  data:
+    transition: 3
 mode: restart
