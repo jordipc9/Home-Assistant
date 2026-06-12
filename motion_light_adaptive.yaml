@@ -1,7 +1,8 @@
 blueprint:
   name: Motion-activated Light with Adaptive Brightness
   description: Encén la llum amb diferents nivells de brillantor i temperatura de
-    color segons l'hora i redueix la brillantor abans d'apagar-se.
+    color segons l'hora i redueix la brillantor abans d'apagar-se. Espera que TOTS
+    els sensors estiguin sense moviment abans d'iniciar el cicle d'apagada.
   domain: automation
   input:
     motion_sensor:
@@ -21,9 +22,8 @@ blueprint:
           - light
           multiple: true
     no_motion_wait:
-      name: Temps abans de baixar brillantor i apagar
-      description: Temps d'espera sense moviment abans de reduir la brillantor i apagar
-        la llum.
+      name: Temps abans de baixar brillantor
+      description: Temps d'espera sense moviment abans de reduir la brillantor.
       default: 120
       selector:
         number:
@@ -32,34 +32,59 @@ blueprint:
           unit_of_measurement: seconds
           step: 1.0
           mode: slider
+    dim_wait_night:
+      name: Temps atenuat abans d'apagar (nit)
+      description: Temps amb la llum atenuada abans d'apagar-se, en horari nocturn.
+      default: 15
+      selector:
+        number:
+          min: 5.0
+          max: 600.0
+          unit_of_measurement: seconds
+          step: 1.0
+          mode: slider
+    dim_wait_day:
+      name: Temps atenuat abans d'apagar (dia/vespre)
+      description: Temps amb la llum atenuada abans d'apagar-se, durant el dia i el vespre.
+      default: 60
+      selector:
+        number:
+          min: 5.0
+          max: 600.0
+          unit_of_measurement: seconds
+          step: 1.0
+          mode: slider
   source_url: https://raw.githubusercontent.com/jordipc9/Home-Assistant/refs/heads/main/motion_light_adaptive.yaml
 trigger:
 - platform: state
   entity_id: !input motion_sensor
   to: 'on'
+variables:
+  motion_entities: !input motion_sensor
+  dim_wait_night: !input dim_wait_night
+  dim_wait_day: !input dim_wait_day
+  periode: >-
+    {{ 'nit' if now().hour >= 22 or now().hour < 6
+       else 'dia' if now().hour < 18
+       else 'vespre' }}
 action:
 - service: light.turn_on
   target:
     entity_id: !input light_target
   data:
-    brightness_pct: '{{ 30 if now().hour >= 22 or now().hour < 6 else 100 if now().hour
-      >= 6 and now().hour < 18 else 60 }}'
-    color_temp_kelvin: '{{ 2200 if now().hour >= 22 or now().hour < 6 else 4000 if
-      now().hour >= 6 and now().hour < 18 else 2850 }}'
+    brightness_pct: "{{ {'nit': 30, 'dia': 100, 'vespre': 60}[periode] }}"
+    color_temp_kelvin: "{{ {'nit': 2200, 'dia': 4000, 'vespre': 2850}[periode] }}"
     transition: 3
-- wait_for_trigger:
-  - platform: state
-    entity_id: !input motion_sensor
-    to: 'off'
+- wait_template: >-
+    {{ expand(motion_entities) | selectattr('state', 'eq', 'on') | list | count == 0 }}
 - delay: !input no_motion_wait
 - service: light.turn_on
   target:
     entity_id: !input light_target
   data:
-    brightness_pct: '{{ 15 if now().hour >= 22 or now().hour < 6 else 50 if now().hour
-      >= 6 and now().hour < 18 else 30 }}'
+    brightness_pct: "{{ {'nit': 15, 'dia': 50, 'vespre': 30}[periode] }}"
     transition: 2
-- delay: '{{ 15 if now().hour >= 0 and now().hour < 6 else 60 }}'
+- delay: "{{ dim_wait_night if periode == 'nit' else dim_wait_day }}"
 - service: light.turn_off
   target:
     entity_id: !input light_target
